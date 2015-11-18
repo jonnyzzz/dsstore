@@ -1,4 +1,6 @@
-package Mac::Finder::DSStore::BuddyAllocator;
+package org.jonnyzzz.dsstore
+
+/*
 
 =head1 NAME
 
@@ -44,6 +46,7 @@ operations.
 
 =cut
 
+*/
 sub open {
     my($class, $fh) = @_;
 
@@ -109,6 +112,7 @@ sub open {
 
     return $self;
 }
+/*
 
 =head2 $allocator = Mac::Finder::DSStore::BuddyAllocator->new($fh)
 
@@ -116,6 +120,7 @@ Similar to C<open>, but does not read anything from the file. This
 can be used to create a new file from scratch.
 
 =cut
+*/
 
 sub new {
     my($cls, $fh) = @_;
@@ -149,12 +154,14 @@ sub new {
 
     $self;
 }
+/*
 
 =head2 $allocator->close( )
 
 Closes the underlying file handle.
 
 =cut
+*/
 
 sub close {
     my($self) = @_;
@@ -164,6 +171,7 @@ sub close {
 
     $fh->close;
 }
+/*
 
 =head2 $allocator->listBlocks($verbose)
 
@@ -173,6 +181,7 @@ output filehandle. Returns true if the allocated and free blocks
 have no gaps or overlaps.
 
 =cut
+*/
 
 sub listBlocks {
     my($self, $verbose) = @_;
@@ -225,6 +234,7 @@ sub listBlocks {
 
     ( $gaps == 0 && $overlaps == 0 );
 }
+/*
 
 =head2 $allocator->writeMetaData( )
 
@@ -232,6 +242,7 @@ Writes the allocator's metadata (header block and root block)
 back to the file.
 
 =cut
+*/
 
 sub writeMetaData {
     my($self) = @_;
@@ -267,7 +278,7 @@ sub rootBlockSize {
     my($size);
 
     $size = 8;  # The offset count and the unknown field that follows it
-    
+
     # The offset blocks, rounded up to a multiple of 256 entries
     my($offsetcount) = scalar( @{$self->{'offsets'}} );
     my($tail) = $offsetcount % 256;
@@ -318,6 +329,7 @@ sub writeRootblock {
 	$into->write('N N*', scalar(@$blks), @$blks);
     }
 }
+/*
 
 =head2 $block = $allocator->blockByNumber(blocknumber[, write])
 
@@ -332,6 +344,7 @@ Retrieves a block (a BuddyAllocator::Block instance) by offset & length.
 Normally you should use C<blockByNumber> instead of this method.
 
 =cut
+*/
 
 sub getBlock {
     my($self, $offset, $size) = @_;
@@ -339,7 +352,7 @@ sub getBlock {
     return Mac::Finder::DSStore::BuddyAllocator::Block->new($self, $offset, $size);
 }
 
-# Retrieve a block by its block number (small integer)
+//# Retrieve a block by its block number (small integer)
 sub blockByNumber {
     my($self, $id, $write) = @_;
     my($addr) = $self->{offsets}->[$id];
@@ -354,6 +367,7 @@ sub blockByNumber {
 	return Mac::Finder::DSStore::BuddyAllocator::WriteBlock->new($self, $offset, $len);
     }
 }
+/*
 
 =head2 ( $offset, $size ) = $allocator->blockOffset(blockid)
 
@@ -362,6 +376,7 @@ The offset doesn't include the 4-byte fudge.
 In scalar context, just returns the offset.
 
 =cut
+*/
 
 sub blockOffset {
     my($self, $id) = @_;
@@ -372,7 +387,7 @@ sub blockOffset {
     return ( $offset,  1 << ( $addr & 0x1F ) );
 }
 
-# Return freelist + index of a block's buddy in its freelist (or empty list)
+//# Return freelist + index of a block's buddy in its freelist (or empty list)
 sub _buddy {
     my($self, $offset, $width) = @_;
     my($freelist, $buddyaddr);
@@ -384,7 +399,7 @@ sub _buddy {
 	    grep { $freelist->[$_] == $buddyaddr } 0 .. $#$freelist );
 }
 
-# Free a block, coalescing ith buddies as needed.
+//# Free a block, coalescing ith buddies as needed.
 sub _free {
     my($self, $offset, $width) = @_;
 
@@ -401,7 +416,7 @@ sub _free {
     }
 }
 
-# Allocate a block of a specified width, splitting as needed.
+//# Allocate a block of a specified width, splitting as needed.
 sub _alloc {
     my($self, $width) = @_;
     
@@ -425,6 +440,7 @@ sub _alloc {
 	return $offset;
     }
 }
+/*
 
 =head2 $blocknumber = $allocator->allocate($size, [$blocknumber])
 
@@ -442,6 +458,7 @@ Releases the block number and the block associated with it back to the
 block pool.
 
 =cut
+*/
 
 sub allocate {
     my($self, $bytes, $blocknum) = @_;
@@ -511,6 +528,7 @@ sub free {
     #$loglevel --;
     undef;
 }
+/*
 
 =head1 ATTRIBUTES
 
@@ -527,8 +545,9 @@ The file handle passed in to C<open> or C<new>. If you find yourself needing
 to use this, you should probably try to extend the class so that you don't.
 
 =cut
+*/
 
-# Used by ...::Block to get a positioned file handle.
+//# Used by ...::Block to get a positioned file handle.
 sub _sought {
     my($self, $offset) = @_;
 
@@ -539,6 +558,7 @@ sub _sought {
 }
 
 package Mac::Finder::DSStore::BuddyAllocator::Block;
+/*
 
 =head1 BuddyAllocator::Block
 
@@ -596,6 +616,7 @@ use Carp;
 #
 #  [ $allocator, $value, $position]
 #
+*/
 
 sub new {
     my($class, $allocator, $offset, $size) = @_;
@@ -651,6 +672,7 @@ sub copyback {
 }
 
 package Mac::Finder::DSStore::BuddyAllocator::WriteBlock;
+/*
 
 use strict;
 use warnings;
@@ -659,6 +681,7 @@ use Carp;
 #
 # Write blocks
 #
+*/
 
 sub new {
     my($class, $allocator, $offset, $size) = @_;
@@ -724,10 +747,12 @@ sub close {
     undef $self->[1];
     1;
 }
+/*
 
 #
 # This is just here for debugging/testing purposes
 #
+*/
 
 sub copyback {
     my($self) = @_;
@@ -740,14 +765,18 @@ sub copyback {
 }
 
 package Mac::Finder::DSStore::BuddyAllocator::StringBlock;
+/*
 
 use strict;
 use warnings;
 
+*/
+/*
 #
 # This one's kind of handy, really, but is only used for debugging and
 # test harnesses right now.
 #
+*/
 
 sub new {
     my($x) = '';
@@ -768,6 +797,8 @@ sub copyback {
     ${$_[0]};
 }
 
+/*
+
 =head1 AUTHOR
 
 Written by Wim Lewis as part of the Mac::Finder::DSStore package.
@@ -781,3 +812,4 @@ modify it under the same terms as Perl itself.
 =cut
 
 1;
+*/

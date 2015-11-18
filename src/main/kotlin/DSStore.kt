@@ -1,5 +1,9 @@
-package Mac::Finder::DSStore;
+package org.jonnyzzz.dsstore
 
+import org.slf4j.LoggerFactory
+
+
+/*
 =head1 NAME
 
 Mac::Finder::DSStore - Read and write Macintosh Finder DS_Store files
@@ -17,20 +21,11 @@ argument which is a specific block of the file as an instance of
 L<Mac::Finder::DSStore::BuddyAllocator::Block>.
 
 =cut
+*/
 
-use strict;
-use warnings;
-use POSIX qw(ceil);
-use Carp qw(croak);
-use Fcntl;
-require Exporter;
+val VERSION = "0.96";
 
-our($VERSION) = '0.96';
-our(@ISA) = qw(Exporter);
-our(@EXPORT_OK) = qw( getDSDBEntries putDSDBEntries writeDSDBEntries makeEntries );
-
-our($testpoint);
-
+/*
 =head2 @records = &Mac::Finder::DSStore::getDSDBEntries($store[, $callback])
 
 Retrieves the "superblock" pointed to by the C<DSDB> entry in the store's table
@@ -39,6 +34,11 @@ the records in the tree. Alternately, you can supply a callback which will
 be invoked for each record, and C<getDSDBEntries> will return an empty list.
 
 =cut
+*/
+
+fun warn(message: String) {
+    LoggerFactory.getLogger("DS_Store").warn(message)
+}
 
 sub getBTreeRootblock {
     my($store) = @_;
@@ -53,15 +53,16 @@ sub getDSDBEntries {
     $callback = sub { push(@retval, $_[0]); } unless defined $callback;
 
     my($rootnode, $height, $nrec, $nnodes, $blksize) = &getBTreeRootblock($file);
-    
+
     my($n) = &traverse_btree($file, $rootnode, $callback);
 
     warn "Header node count ($nrec) not equal to actual node count ($n)"
-	if $n != $nrec;
+    if $n != $nrec;
 
     @retval;
 }
 
+/*
 =head2 &Mac::Finder::DSStore::putDSDBEntries($store, $arrayref)
 
 C<$arrayref> must contain a correctly ordered list of
@@ -72,23 +73,24 @@ an existing tree of records in the file already, it will be deallocated.
 This function does not flush the allocator's information back to the file.
 
 =cut
+*/
 
 sub putDSDBEntries {
     my($file, $recs) = @_;
-    
+
     my($tocblock, $pagesize);
     my($pagecount, $reccount, $height);
 
     # Delete the old btree (but keep its superblock), or allocate a superblock.
     if(defined($file->{toc}->{DSDB})) {
-	$tocblock = $file->{toc}->{DSDB};
-	my($old_rootblock);
-	($old_rootblock, $pagesize) = (&getBTreeRootblock($file))[0, 4];
-	&freeBTreeNode($file, $old_rootblock);
+        $tocblock = $file->{toc}->{DSDB};
+        my($old_rootblock);
+        ($old_rootblock, $pagesize) = (&getBTreeRootblock($file))[0, 4];
+        &freeBTreeNode($file, $old_rootblock);
     } else {
-	$tocblock = $file->allocate( 20 );
-	$file->{toc}->{DSDB} = $tocblock;
-	$pagesize = 0x1000;
+        $tocblock = $file->allocate( 20 );
+        $file->{toc}->{DSDB} = $tocblock;
+        $pagesize = 0x1000;
     }
 
     $reccount = @$recs;
@@ -96,65 +98,67 @@ sub putDSDBEntries {
     $height = 0;
 
     my(@children);
-    
+
     # Partition the records into btree nodes, from the bottom of
     # the tree working towards the root.
     do {
-	my(@sizes);
+        my(@sizes);
 
-	if (@children) {
+        if (@children) {
             # Interior node: child pointers interleaved with records
-	    @sizes = map { 4 + $_->byteSize } @$recs;
-	} else {
+                    @sizes = map { 4 + $_->byteSize } @$recs;
+        } else {
             # Leaf node: just a bunch of records
-	    @sizes = map { $_->byteSize } @$recs;
-	}
+                    @sizes = map { $_->byteSize } @$recs;
+        }
 
         # In addition to @sizes, each page contains a record
         # count and a flag/childnode field (4 bytes each)
-	my(@interleaf) = &partition_sizes($pagesize - 8, @sizes);
-	my(@nchildren);
+        my(@interleaf) = &partition_sizes($pagesize - 8, @sizes);
+        my(@nchildren);
 
-	my($next) = 0;
-	foreach my $non (@interleaf, 1+$#$recs) {
-	    my($blknr) = $file->allocate($pagesize);
-	    push(@nchildren, $blknr);
-	    my($blk) = $file->blockByNumber($blknr, 1);
-	    if (@children) {
-		&writeBTreeNode($blk,
-				[ @$recs[ $next .. $non-1 ] ],
-				[ @children[ $next .. $non ] ] );
-	    } else {
-		&writeBTreeNode($blk,
-				[ @$recs[ $next .. $non-1 ] ]);
-	    }
+        my($next) = 0;
+        foreach my $non (@interleaf, 1+$#$recs) {
+            my($blknr) = $file->allocate($pagesize);
+            push(@nchildren, $blknr);
+            my($blk) = $file->blockByNumber($blknr, 1);
+            if (@children) {
+                &writeBTreeNode($blk,
+                [ @$recs[ $next .. $non-1 ] ],
+                [ @children[ $next .. $non ] ] );
+            } else {
+                &writeBTreeNode($blk,
+                [ @$recs[ $next .. $non-1 ] ]);
+            }
             $blk->close(1);
-	    $next = $non + 1;
-	    $pagecount ++;
-	}
-	
-	$height ++;
-	$recs = [ map { $recs->[$_] } @interleaf ];
-	@children = @nchildren;
-	die unless @children == 1+@$recs;
+            $next = $non + 1;
+            $pagecount ++;
+        }
+
+        $height ++;
+        $recs = [ map { $recs->[$_] } @interleaf ];
+        @children = @nchildren;
+        die unless @children == 1+@$recs;
     } while(@children > 1);
     die unless 0 == @$recs;
 
     my($masterblock) = $file->blockByNumber($tocblock, 1);
     $masterblock->write('NNNNN',
-			$children[0],
-			$height - 1,
-			$reccount,
-			$pagecount,
-			$pagesize);
+    $children[0],
+    $height - 1,
+    $reccount,
+    $pagecount,
+    $pagesize);
     $masterblock->close;
 
     1;
 }
 
+/*
 # Given a list of sizes, break them into groups so that
 # each group sums to no more than $max, not including the items
 # that separate them (returned in @ejecta).
+*/
 sub partition_sizes {
     my($max, @sizes) = @_;
     my($sum) = 0;
@@ -168,16 +172,16 @@ sub partition_sizes {
 
     my($n) = 0;
     for(;;) {
-	my($bsum) = 0;
-	while( $n < @sizes && $bsum < $target && ($bsum + $sizes[$n]) < $max ) {
-	    $bsum += $sizes[$n];
-	    $n ++;
-	}
+        my($bsum) = 0;
+        while( $n < @sizes && $bsum < $target && ($bsum + $sizes[$n]) < $max ) {
+            $bsum += $sizes[$n];
+            $n ++;
+        }
 
-	last if $n >= @sizes;
+        last if $n >= @sizes;
 
-	push(@ejecta, $n);
-	$n++;
+        push(@ejecta, $n);
+        $n++;
     }
 
     @ejecta;
@@ -203,17 +207,17 @@ sub traverse_btree {
     }
 
     $count = @$values;
-    
+
     if (defined $pointers) {
-	die "Value count should be one less than pointer count" 
-	    unless ( @$values + 1 ) == ( @$pointers ) ;
-	$count += &traverse_btree($store, shift(@$pointers), $callback);
-	while(@$values) {
-	    &{$callback}(shift @$values);
-	    $count += &traverse_btree($store, shift(@$pointers), $callback);
-	}
+        die "Value count should be one less than pointer count"
+        unless ( @$values + 1 ) == ( @$pointers ) ;
+        $count += &traverse_btree($store, shift(@$pointers), $callback);
+        while(@$values) {
+            &{$callback}(shift @$values);
+            $count += &traverse_btree($store, shift(@$pointers), $callback);
+        }
     } else {
-	&{$callback}($_) foreach @$values;
+        &{$callback}($_) foreach @$values;
     }
 
     $count;
@@ -222,11 +226,11 @@ sub traverse_btree {
 sub freeBTreeNode {
     my($allocator, $nodeid) = @_;
     my($block) = $allocator->blockByNumber( $nodeid );
-    
+
     if($block->read(4, 'N') != 0) {
-	$block->seek(0);
-	my(undef, $pointers) = &readBTreeNode($block);
-	&freeBTreeNode($allocator, $_) foreach @$pointers;
+        $block->seek(0);
+        my(undef, $pointers) = &readBTreeNode($block);
+        &freeBTreeNode($allocator, $_) foreach @$pointers;
     }
 
     $allocator->free($nodeid);
@@ -239,21 +243,21 @@ sub readBTreeNode {
 
     my($count) = $node->read(4, 'N');
     if ($pointer > 0) {
-	my(@pointers, @values);
-	while($count) {
-	    push(@pointers, $node->read(4, 'N'));
-	    push(@values, Mac::Finder::DSStore::Entry->readEntry($node));
-	    $count --;
-	}
-	push(@pointers, $pointer);
-	return \@values, \@pointers;
+        my(@pointers, @values);
+        while($count) {
+        push(@pointers, $node->read(4, 'N'));
+        push(@values, Mac::Finder::DSStore::Entry->readEntry($node));
+        $count --;
+    }
+        push(@pointers, $pointer);
+        return \@values, \@pointers;
     } else {
-	my(@values);
-	while($count) {
-	    push(@values, Mac::Finder::DSStore::Entry->readEntry($node));
-	    $count --;
-	}
-	return \@values, undef;
+        my(@values);
+        while($count) {
+        push(@values, Mac::Finder::DSStore::Entry->readEntry($node));
+        $count --;
+    }
+        return \@values, undef;
     }
 }
 
@@ -261,21 +265,21 @@ sub writeBTreeNode {
     my($into, $values, $pointers) = @_;
 
     if (!$pointers) {
-	# A leaf node: no pointers, just database entries.
-	$into->write('NN', 0, scalar(@$values));
-	$_->write($into) foreach @$values;
+        # A leaf node: no pointers, just database entries.
+        $into->write('NN', 0, scalar(@$values));
+        $_->write($into) foreach @$values;
     } else {
-	# An internal node: interleaved pointers and values,
-	# with the final pointer moved to the front.
-	my(@vals) = @$values;
-	my(@ps) = @$pointers;
-	die "number of pointers must be one more than number of entries"
-	    unless 1+@vals == @ps;
-	$into->write('NN', pop(@ps), scalar(@vals));
-	while(@vals) {
-	    $into->write('N', shift(@ps));
-	    ( shift(@vals) )->write($into);
-	}
+        # An internal node: interleaved pointers and values,
+        # with the final pointer moved to the front.
+        my(@vals) = @$values;
+        my(@ps) = @$pointers;
+        die "number of pointers must be one more than number of entries"
+        unless 1+@vals == @ps;
+        $into->write('NN', pop(@ps), scalar(@vals));
+        while(@vals) {
+            $into->write('N', shift(@ps));
+            ( shift(@vals) )->write($into);
+        }
     }
 
     if($testpoint) {
@@ -284,15 +288,17 @@ sub writeBTreeNode {
     }
 }
 
+/*
 =head2 &Mac::Finder::DSStore::writeDSDBEntries($file, @entries)
 
 A convenience function which sorts a list of entries and writes them
 to the specified file using C<putDSDBEntries>, then flushes the allocator's
-data structures to disk. 
+data structures to disk.
 C<$file> may be a filename or an open file handle.
 The store object is returned, but you don't need to do anything else with it.
 
 =cut
+*/
 
 sub writeDSDBEntries {
     my($store, $recs);
@@ -301,18 +307,18 @@ sub writeDSDBEntries {
 
         require IO::File;
         require Mac::Finder::DSStore::BuddyAllocator;
-        
+
         unless(ref $file) {
-            my($filename) = $file;
-            $file = IO::File->new( $filename, Fcntl::O_RDWR | Fcntl::O_CREAT );
-            croak "$filename: $!, died" unless $file;
-        }
+        my($filename) = $file;
+        $file = IO::File->new( $filename, Fcntl::O_RDWR | Fcntl::O_CREAT );
+        croak "$filename: $!, died" unless $file;
+    }
 
         if((stat($file))[7] > 32) {
-            $store = Mac::Finder::DSStore::BuddyAllocator->open($file);
-        } else {
-            $store = Mac::Finder::DSStore::BuddyAllocator->new($file);
-        }
+        $store = Mac::Finder::DSStore::BuddyAllocator->open($file);
+    } else {
+        $store = Mac::Finder::DSStore::BuddyAllocator->new($file);
+    }
 
         $recs = [ sort { $a->cmp($b) } @entries ];
     }
@@ -323,6 +329,7 @@ sub writeDSDBEntries {
     $store;
 }
 
+/*
 =head2 &Mac::Finder::DSStore::makeEntries($filename, [ what => value ... ])
 
 C<makeEntries> encapsulates some information about the format of individual
@@ -338,14 +345,15 @@ to use this, and check the source code for a list of the formats it accepts.
 This function might change in the future.
 
 =cut
+*/
 
 sub makeEntries {
     my($filename, @info) = @_;
     my(@results);
-    
+
     while(@info) {
         my($recordType) = shift @info;
-        
+
         if ($recordType =~ /^....$/) {
             my($record) = Mac::Finder::DSStore::Entry->new($filename, $recordType);
             $record->value( shift @info );
@@ -353,17 +361,18 @@ sub makeEntries {
         } elsif ($recordType =~ /^(....)_hex$/) {
             my($record) = Mac::Finder::DSStore::Entry->new($filename, $1);
             $record->value( pack('H*', shift @info) );
-            push(@results, $record);            
+            push(@results, $record);
         } else {
             my($mkr) = $Mac::Finder::DSStore::Entry::{'make_'.$recordType};
             croak "Don't know how to handle '$recordType'" unless $mkr;
             push(@results, &{$mkr}($filename, $recordType, \@info));
         }
     }
-    
-    @results;    
+
+    @results;
 }
 
+/*
 package Mac::Finder::DSStore::Entry;
 
 =head1 Mac::Finder::DSStore::Entry
@@ -374,38 +383,34 @@ directory), a 4-character record type, and a value. The value is
 one of a few concrete types, according to the record type.
 
 =cut
-
-use strict;
-use warnings;
-use Encode ();
-use Carp qw(croak);
-
+*/
 #
 # Concrete types of known ids
 #
 our(%types) = (
-               'BKGD' => 'blob',
-               'cmmt' => 'ustr',
-               'dilc' => 'blob',
-               'dscl' => 'bool',
-               'fwi0' => 'blob',
-               'fwsw' => 'long',
-               'fwvh' => 'shor',
-               'icgo' => 'blob',
-               'icsp' => 'blob',
-               'icvo' => 'blob',
-               'ICVO' => 'bool',
-               'icvt' => 'shor',
-               'Iloc' => 'blob',
-               'info' => 'blob',
-               'lssp' => 'blob',
-               'lsvo' => 'blob',
-               'LSVO' => 'bool',
-               'lsvt' => 'shor',
-               'pict' => 'blob',
-               'vstl' => 'type',
-               );
+'BKGD' => 'blob',
+'cmmt' => 'ustr',
+'dilc' => 'blob',
+'dscl' => 'bool',
+'fwi0' => 'blob',
+'fwsw' => 'long',
+'fwvh' => 'shor',
+'icgo' => 'blob',
+'icsp' => 'blob',
+'icvo' => 'blob',
+'ICVO' => 'bool',
+'icvt' => 'shor',
+'Iloc' => 'blob',
+'info' => 'blob',
+'lssp' => 'blob',
+'lsvo' => 'blob',
+'LSVO' => 'bool',
+'lsvt' => 'shor',
+'pict' => 'blob',
+'vstl' => 'type',
+);
 
+/*
 =head2 $entry = ...::Entry->new($filename, $typecode)
 
 Creates a new entry with no value. The concrete type is inferred from the
@@ -424,20 +429,21 @@ what aspect of the file the entry describes.
 
 Gets or sets the value of an entry.
 
-If the concrete type is C<blob> or C<type>, the value is interpreted as a byte string; 
+If the concrete type is C<blob> or C<type>, the value is interpreted as a byte string;
 if it is C<ustr>, as a character string.
 If the concrete type is C<long>, C<shor>, or C<bool>, then the value should
 be an integer.
 
 =cut
+*/
 
 sub new {
     my($class, $filename, $strucId, @opts) = @_;
-    
+
     croak "no opts supported yet, died" if @opts;
 
     bless([ $filename, $strucId, $types{$strucId}, undef ],
-          ref $class || $class);
+    ref $class || $class);
 }
 
 sub filename {
@@ -450,12 +456,12 @@ sub strucId {
 
 sub value {
     my($self, $value) = @_;
- 
+
     return $self->[3] unless defined $value;
-   
+
     croak "Can't set a value on an entry with no concrete type"
-        unless defined($self->[2]);
-    
+    unless defined($self->[2]);
+
     my($t) = $self->[2];
     if($t eq 'blob' or $t eq 'ustr') {
         $self->[3] = '' . $value;
@@ -464,7 +470,7 @@ sub value {
     } elsif ($t eq 'type') {
         $value = '' . $value;
         croak "'type' values must be exactly four bytes long"
-            unless length($value) == 4;
+        unless length($value) == 4;
         $self->[3] = $value;
     } else {
         die "Unknown concrete type $t, died";
@@ -481,25 +487,25 @@ sub readEntry {
     $filename = &readFilename($block);
     $strucId = $block->read(4);
     $strucType = $block->read(4);
-    
+
     if ($strucType eq 'bool') {
-	$value = $block->read(1, 'C');
+        $value = $block->read(1, 'C');
     } elsif ($strucType eq 'long' or $strucType eq 'shor') {
-	$value = $block->read(4, 'N');
+        $value = $block->read(4, 'N');
     } elsif ($strucType eq 'blob') {
-	my($bloblen) = $block->read(4, 'N');
-	$value = $block->read($bloblen);
+        my($bloblen) = $block->read(4, 'N');
+        $value = $block->read($bloblen);
     } elsif ($strucType eq 'ustr') {
-	my($strlen) = $block->read(4, 'N');
-	$value = Encode::decode('UTF-16BE', $block->read(2 * $strlen));
+        my($strlen) = $block->read(4, 'N');
+        $value = Encode::decode('UTF-16BE', $block->read(2 * $strlen));
     } elsif ($strucType eq 'type') {
         $value = $block->read(4);
     } else {
-	die "Unknown struc type '$strucType', died";
+        die "Unknown struc type '$strucType', died";
     }
 
     return bless([ $filename, $strucId, $strucType, $value ],
-		 ref($class) || $class);
+    ref($class) || $class);
 }
 
 sub readFilename {
@@ -507,7 +513,7 @@ sub readFilename {
 
     my($flen) = $block->read(4, 'N');
     my($utf16be) = $block->read(2 * $flen);
-    
+
     return Encode::decode('UTF-16BE', $utf16be, Encode::FB_CROAK);
 }
 
@@ -518,19 +524,19 @@ sub byteSize {
     # TODO: We're assuming that the filename is completely normal
     # basic-multilingual-plane characters, and doesn't need to be de/re-
     # composed or anything.
-    $size = length($filename) * 2 + 12;
+            $size = length($filename) * 2 + 12;
     # 12 bytes: 4 each for filename length, struct id, and struct type
 
     if ($strucType eq 'long' or $strucType eq 'shor' or $strucType eq 'type') {
-	$size += 4;
+        $size += 4;
     } elsif ($strucType eq 'bool') {
-	$size += 1;
+        $size += 1;
     } elsif ($strucType eq 'blob') {
-	$size += 4 + length($value);
+        $size += 4 + length($value);
     } elsif ($strucType eq 'ustr') {
-	$size += 4 + 2 * length($value);
+        $size += 4 + 2 * length($value);
     } else {
-	die "Unknown struc type '$strucType', died";
+        die "Unknown struc type '$strucType', died";
     }
 
     $size;
@@ -538,37 +544,37 @@ sub byteSize {
 
 sub write {
     my($self, $into) = @_;
-    
+
     my($fname) = Encode::encode('UTF-16BE', $self->[0]);
 
     my($strucType) = $self->[2];
 
     $into->write('N a* a4 a4', length($fname)/2, $fname,
-		 $self->[1], $strucType);
+    $self->[1], $strucType);
 
     if ($strucType eq 'long' or $strucType eq 'shor') {
-	$into->write('N', $self->[3]);
+        $into->write('N', $self->[3]);
     } elsif ($strucType eq 'bool') {
-	$into->write('C', $self->[3]);
+        $into->write('C', $self->[3]);
     } elsif ($strucType eq 'blob') {
-	$into->write('N', length($self->[3]));
-	$into->write($self->[3]);
+        $into->write('N', length($self->[3]));
+        $into->write($self->[3]);
     } elsif ($strucType eq 'ustr') {
-	$into->write('N', length($self->[3]));
-	$into->write(Encode::encode('UTF-16BE', $self->[3]));
+        $into->write('N', length($self->[3]));
+        $into->write(Encode::encode('UTF-16BE', $self->[3]));
     } elsif ($strucType eq 'type') {
         $into->write('a4', $self->[3]);
     } else {
-	die "Unknown struc type '$strucType', died";
+        die "Unknown struc type '$strucType', died";
     }
 }
-
+/*
 =head2 $entry->cmp($other)
 
 Returns -1, 0, or 1 depending on the relative ordering of the two entries,
 according to (a guess at) the record ordering used by the store's B-tree.
 
-=cut
+=cut*/
 
 sub cmp {
     my($self, $other) = @_;
@@ -582,14 +588,16 @@ sub cmp {
     # Ordering in the btree is Finder-filename-ordering on the files,
     # and simple bytewise ordering on the structure IDs.
 
-    ( lc($self->[0]) cmp lc($other->[0]) ) 
-        ||
+    ( lc($self->[0]) cmp lc($other->[0]) )
+    ||
     ( $self->[1] cmp $other->[1] );
 }
 
+/*
 #
 #  The make_foo subs are used by Mac::Finder::DSStore::makeEntries.
 #
+*/
 
 sub make_BKGD_default {
     my($filename, undef, undef) = @_;
@@ -606,16 +614,16 @@ sub make_BKGD_color {
 
     if ($color =~ /^\#([0-9a-f]+)$/i) {
         if(length($1) == 3) {
-            ( $rgb = $1 ) =~ s/(.)(.)(.)/$1$1$1$1$2$2$2$2$3$3$3$3/;
-        } elsif (length($1) == 6) {
-            ( $rgb = $1 ) =~ s/(..)(..)(..)/$1$1$2$2$3$3/;
-        } elsif (length($1) == 12) {
-            $rgb = $1;
-        }
+        ( $rgb = $1 ) =~ s/(.)(.)(.)/$1$1$1$1$2$2$2$2$3$3$3$3/;
+    } elsif (length($1) == 6) {
+        ( $rgb = $1 ) =~ s/(..)(..)(..)/$1$1$2$2$3$3/;
+    } elsif (length($1) == 12) {
+        $rgb = $1;
+    }
     }
 
     croak "Can't parse color string '$color'"
-        unless $rgb;
+    unless $rgb;
 
     my($rec) = Mac::Finder::DSStore::Entry->new($filename, 'BKGD');
     $rec->value( pack('A4 H12 x2', 'ClrB', $rgb) );
@@ -658,15 +666,15 @@ sub _make_packed_arrayref {
     my($values) = shift @$argv;
 
     croak "$strucId argument must be an array ref"
-        unless ref $values;
+    unless ref $values;
 
     croak "$strucId argument must have at least $reqcount items"
-        unless $reqcount <= @$values;
+    unless $reqcount <= @$values;
 
     my($max) = $reqcount + @$dflt;
 
     croak "$strucId argument can't have more than $max items"
-        if $max < @$values;
+    if $max < @$values;
 
     my(@fields) = @$values;
     if ($max > @fields) {
@@ -674,26 +682,26 @@ sub _make_packed_arrayref {
     }
 
     return &_make_packed($filename, substr($strucId, 0, 4),
-                         $format, @fields);
+    $format, @fields);
 }
 
 sub make_Iloc_xy {
     my($filename, $strucId, $argv) = @_;
     return &_make_packed_arrayref($filename, $strucId, $argv,
-                                  'NN nnnn', 2, [65535, 65535, 65535, 0]);
+    'NN nnnn', 2, [65535, 65535, 65535, 0]);
 }
 
 sub make_fwi0_flds {
     my($filename, $strucId, $argv) = @_;
     my($flds) = shift @$argv;
-    
+
     croak "$strucId argument must have 7 values"
-        unless 7 == @$flds;
+    unless 7 == @$flds;
 
     return &_make_packed($filename, 'fwi0', 'n4 A4 n*', @$flds);
 }
-    
 
+/*
 =head1 SEE ALSO
 
 See L<Mac::Finder::DSStore::Format> for more detailed information on
@@ -712,3 +720,4 @@ Thanks also to Martin Baker for bug reports.
 =cut
 
 1;
+*/
