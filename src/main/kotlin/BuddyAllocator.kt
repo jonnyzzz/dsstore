@@ -558,7 +558,8 @@ sub _sought {
 }
 
 package Mac::Finder::DSStore::BuddyAllocator::Block;
-/*
+class Block {
+    /*
 
 =head1 BuddyAllocator::Block
 
@@ -618,61 +619,70 @@ use Carp;
 #
 */
 
-sub new {
-    my($class, $allocator, $offset, $size) = @_;
+    sub new
+    {
+        my($class, $allocator, $offset, $size) = @_;
 
-    my($value);
-    $allocator->_sought($offset)->read($value, $size)
-	> 0 or die;
-    # Previously, this died if we couldn't read the full block.
-    # Not sure if it's really an error not to read the full
-    # block if the next layer up doesn't need the full block.
-    # So now we're succeeding as long as we get something; if
-    # the reader overruns it'll die in substr().
+        my($value);
+        $allocator->_sought($offset)->read($value, $size)
+        > 0 or die;
+        # Previously, this died if we couldn't read the full block.
+        # Not sure if it's really an error not to read the full
+        # block if the next layer up doesn't need the full block.
+        # So now we're succeeding as long as we get something; if
+        # the reader overruns it'll die in substr().
 
-    bless([ $allocator, $value, 0 ], ref $class || $class);
-}
-
-sub read {
-    my($self, $len, $unpack) = @_;
-
-    my($pos) = $self->[2];
-    die "out of range: pos=$pos len=$len max=".(length($self->[1])) if $pos + $len > length($self->[1]);
-    my($bytes) = substr($self->[1], $pos, $len);
-    $self->[2] = $pos + $len;
-    
-    $unpack? unpack($unpack, $bytes) : $bytes;
-}
-
-sub length {
-    return CORE::length($_[0]->[1]);
-}
-
-sub close {
-    1;
-}
-
-sub seek {
-    my($self, $pos, $whence) = @_;
-    $whence = 0 unless defined $whence;
-    if ($whence == 0) {
-	# pos = pos
-    } elsif ($whence == 1) {
-	$pos += $self->[2];
-    } elsif ($whence == 2) {
-	$pos += $self->length();
-    } else {
-	croak "seek: whence=$whence";
+        bless([ $allocator, $value, 0], ref $class || $class);
     }
-    $self->[2] = $pos;
+
+    sub read
+    {
+        my($self, $len, $unpack) = @_;
+
+        my($pos) = $self->[2];
+        die "out of range: pos=$pos len=$len max=".(length($self->[1])) if $pos+$len > length($self->[1]);
+        my($bytes) = substr($self->[1], $pos, $len);
+        $self->[2] = $pos+$len;
+
+        $unpack? unpack($unpack, $bytes) : $bytes;
+    }
+
+    sub length
+    {
+        return CORE::length($_[0]->[1]);
+    }
+
+    sub close
+    {
+        1;
+    }
+
+    sub seek
+    {
+        my($self, $pos, $whence) = @_;
+        $whence = 0 unless defined $whence;
+        if ($whence == 0) {
+        # pos = pos
+    } elsif ($whence == 1) {
+        $pos += $self->[2];
+    } elsif ($whence == 2) {
+        $pos += $self->length();
+    } else {
+        croak "seek: whence=$whence";
+    }
+        $self->[2] = $pos;
+    }
+
+    sub copyback
+    {
+        return $_[0]->[1];
+    }
 }
 
-sub copyback {
-    return $_[0]->[1];
-}
+//package Mac::Finder::DSStore::BuddyAllocator::WriteBlock;
 
-package Mac::Finder::DSStore::BuddyAllocator::WriteBlock;
-/*
+class WriteBlock {
+    /*
 
 use strict;
 use warnings;
@@ -683,120 +693,134 @@ use Carp;
 #
 */
 
-sub new {
-    my($class, $allocator, $offset, $size) = @_;
+    sub new
+    {
+        my($class, $allocator, $offset, $size) = @_;
 
-    croak "Missing arguments"
-	unless defined($offset) && defined($size);
-    croak "Bad offset"
-	if $offset <= 0;
+        croak "Missing arguments"
+        unless defined($offset) && defined($size);
+        croak "Bad offset"
+        if $offset <= 0;
 
-    bless([ $allocator, undef, 0, $offset, $size ], ref $class || $class);
-}
+        bless([ $allocator, undef, 0, $offset, $size], ref $class || $class);
+    }
 
-sub read {
-    my($self) = @_;
+    sub read
+    {
+        my($self) = @_;
 
-    croak "This is a write-only block";
-}
+        croak "This is a write-only block";
+    }
 
-sub length {
-    return ($_[0]->[4]);
-}
+    sub length
+    {
+        return ($_[0]->[4]);
+    }
 
-sub seek {
-    my($self, $pos, $whence) = @_;
-    if ($whence == 0) {
-	$self->[2] = $pos;
+    sub seek
+    {
+        my($self, $pos, $whence) = @_;
+        if ($whence == 0) {
+        $self->[2] = $pos;
     } elsif ($whence == 1) {
-	$self->[2] += $pos;
+        $self->[2] += $pos;
     } elsif ($whence == 2) {
-	$self->[2] = $self->length + $pos;
+        $self->[2] = $self->length+$pos;
     } else {
-	croak "seek: whence=$whence";
+        croak "seek: whence=$whence";
     }
-    undef $self->[1];
-    $self;
-}
-
-sub write {
-    my($self, $what, @args) = @_;;
-
-    if (!defined($self->[1])) {
-	$self->[1] = $self->[0]->_sought($self->[2] + $self->[3]);
+        undef $self->[1];
+        $self;
     }
 
-    if (@args) {
-	$what = pack($what, @args);
+    sub write
+    {
+        my($self, $what, @args) = @_;;
+
+        if (!defined($self->[1])) {
+        $self->[1] = $self->[0]->_sought($self->[2]+$self->[3]);
     }
 
-    my($wlen) = CORE::length($what);
+        if (@args) {
+            $what = pack($what, @args);
+        }
 
-    croak "Writing past end of block (writing $wlen at ".($self->[2]).", end is at ".($self->[4])."), died"
+        my($wlen) = CORE::length($what);
+
+        croak "Writing past end of block (writing $wlen at ".($self->[2]).", end is at ".($self->[4])."), died"
         if $self->[2]+$wlen > $self->[4];
 
-    $self->[1]->write($what);
-    $self->[2] += $wlen;
-}
-
-sub close {
-    my($self, $fill) = @_;
-    if (defined($fill) && $fill && $self->[2] < $self->[4]) {
-        $self->write("\0" x ($self->[4] - $self->[2]));
+        $self->[1]->write($what);
+        $self->[2] += $wlen;
     }
-    undef $self->[1];
-    1;
-}
-/*
+
+    sub close
+    {
+        my($self, $fill) = @_;
+        if (defined($fill) && $fill && $self->[2] < $self->[4]) {
+        $self->write("\0" x ($self->[4]-$self->[2]));
+    }
+        undef $self->[1];
+        1;
+    }
+    /*
 
 #
 # This is just here for debugging/testing purposes
 #
 */
 
-sub copyback {
-    my($self) = @_;
+    sub copyback
+    {
+        my($self) = @_;
 
-    my($r) = Mac::Finder::DSStore::BuddyAllocator::Block->new(@{$self}[0, 3, 2]);
+        my($r) = Mac::Finder::DSStore::BuddyAllocator::Block->new(@{ $self }[0, 3, 2]);
 
-    undef $self->[1]; # probably need to re-seek now
+        undef $self->[1]; # probably need to re-seek now
 
-    return $r;
+        return $r;
+    }
 }
 
-package Mac::Finder::DSStore::BuddyAllocator::StringBlock;
-/*
+/*package Mac::Finder::DSStore::BuddyAllocator::StringBlock;*/
+
+class StringBlock {
+    /*
 
 use strict;
 use warnings;
 
 */
-/*
+    /*
 #
 # This one's kind of handy, really, but is only used for debugging and
 # test harnesses right now.
 #
 */
 
-sub new {
-    my($x) = '';
-    bless(\$x, ref $_[0] || $_[0]);
-}
-
-sub write {
-    my($self, $what, @args) = @_;;
-
-    if (@args) {
-	$what = pack($what, @args);
+    sub new
+    {
+        my($x) = '';
+        bless(\$x, ref $_[0] || $_[0]);
     }
 
-    ${$self} .= $what;
-}
+    sub write
+    {
+        my($self, $what, @args) = @_;;
 
-sub copyback {
-    ${$_[0]};
-}
+        if (@args) {
+            $what = pack($what, @args);
+        }
 
+        ${ $self }.= $what;
+    }
+
+    sub copyback
+    {
+        ${ $_[0] };
+    }
+
+}
 /*
 
 =head1 AUTHOR
